@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from telethon import TelegramClient, hints, types  # type: ignore
+from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
 from xdg_base_dirs import xdg_state_home
 
@@ -30,6 +31,9 @@ class Settings(BaseSettings):
 
     api_id: str
     api_hash: SecretStr
+    mtproto_proxy_server: str | None = None
+    mtproto_proxy_port: int | None = None
+    mtproto_proxy_secret: str | None = None
 
 
 class Telegram:
@@ -84,10 +88,24 @@ class Telegram:
         else:
             settings = Settings(api_id=api_id, api_hash=SecretStr(api_hash))
 
+        proxy_kwargs: dict = {}
+        if (
+            settings.mtproto_proxy_server
+            and settings.mtproto_proxy_port
+            and settings.mtproto_proxy_secret
+        ):
+            proxy_kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
+            proxy_kwargs["proxy"] = (
+                settings.mtproto_proxy_server,
+                settings.mtproto_proxy_port,
+                settings.mtproto_proxy_secret,
+            )
+
         self._client = TelegramClient(
             session=self._session_file,
             api_id=int(settings.api_id),
             api_hash=settings.api_hash.get_secret_value(),
+            **proxy_kwargs,
         )
 
         return self._client

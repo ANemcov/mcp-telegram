@@ -113,6 +113,30 @@ The configuration file should contain:
 }
 ```
 
+#### Using an MTProto Proxy
+
+If Telegram is blocked in your region, you can route the connection through an MTProto proxy by setting three additional environment variables:
+
+```json
+{
+  "mcpServers": {
+    "mcp-telegram": {
+      "command": "mcp-telegram",
+      "args": ["start"],
+      "env": {
+        "API_ID": "<your_api_id>",
+        "API_HASH": "<your_api_hash>",
+        "MTPROTO_PROXY_SERVER": "<proxy_host>",
+        "MTPROTO_PROXY_PORT": "<proxy_port>",
+        "MTPROTO_PROXY_SECRET": "<proxy_secret>"
+      }
+    }
+  }
+}
+```
+
+The proxy secret is the hex string from a `tg://proxy?...&secret=<secret>` link. When all three proxy variables are set, the connection uses `ConnectionTcpMTProxyRandomizedIntermediate` (the recommended transport for MTProto proxies).
+
 > [!Note]
 > Configuration paths vary by OS and client. For example:
 >
