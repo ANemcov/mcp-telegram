@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from telethon import TelegramClient, hints, types  # type: ignore
 from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
 from xdg_base_dirs import xdg_state_home
 
+from mcp_telegram.config import get_config_instructions, load_config_file
 from mcp_telegram.types import (
     Dialog,
     DownloadedMedia,
@@ -27,13 +28,49 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    """Settings for the Telegram client."""
+    """Settings for the Telegram client.
+
+    Loads configuration in this order:
+    1. Environment variables (TELEGRAM_API_ID, TELEGRAM_API_HASH, etc.)
+    2. ~/.config/mcp-telegram/config.json file
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="TELEGRAM_",
+        case_sensitive=False,
+    )
 
     api_id: str | None = None
     api_hash: SecretStr | None = None
     mtproto_proxy_server: str | None = None
     mtproto_proxy_port: int | None = None
     mtproto_proxy_secret: str | None = None
+
+    def __init__(self, **data):
+        """Initialize with merged config from file and env vars.
+
+        Priority: init_settings > env_settings > file_config
+        """
+        import os
+
+        # Start with file config
+        file_config = load_config_file()
+
+        # Load env vars with TELEGRAM_ prefix
+        env_config = {}
+        for key in ["api_id", "api_hash", "mtproto_proxy_server", "mtproto_proxy_port", "mtproto_proxy_secret"]:
+            env_key = f"TELEGRAM_{key.upper()}"
+            if env_key in os.environ:
+                env_config[key] = os.environ[env_key]
+
+        # Priority: data (init) > env_config > file_config
+        merged = {**file_config, **env_config, **data}
+
+        # Convert api_hash to SecretStr if it's a string
+        if "api_hash" in merged and isinstance(merged["api_hash"], str):
+            merged["api_hash"] = SecretStr(merged["api_hash"])
+
+        super().__init__(**merged)
 
 
 class Telegram:
@@ -89,8 +126,7 @@ class Telegram:
 
         if settings.api_id is None or settings.api_hash is None:
             raise ValueError(
-                "api_id and api_hash are required. "
-                "Provide them as arguments or set TELEGRAM_API_ID and TELEGRAM_API_HASH environment variables."
+                "api_id and api_hash are required.\n\n" + get_config_instructions()
             )
 
         proxy_kwargs: dict = {}
