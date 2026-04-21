@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     """Settings for the Telegram client."""
 
-    api_id: str
-    api_hash: SecretStr
+    api_id: str | None = None
+    api_hash: SecretStr | None = None
     mtproto_proxy_server: str | None = None
     mtproto_proxy_port: int | None = None
     mtproto_proxy_secret: str | None = None
@@ -66,7 +66,7 @@ class Telegram:
         """Create a Telegram client.
 
         If `api_id` and `api_hash` are not provided, the client
-        will use the default values from the `Settings` class.
+        will use the default values from the `Settings` class (environment variables).
 
         Args:
             api_id (`int`, optional): The API ID for the Telegram client.
@@ -76,17 +76,22 @@ class Telegram:
             `telethon.TelegramClient`: The created Telegram client.
 
         Raises:
-            `pydantic_core.ValidationError`: If `api_id` and `api_hash`
-            are not provided.
+            `ValueError`: If `api_id` and `api_hash` are not provided.
         """
         if self._client is not None:
             return self._client
 
         settings: Settings
         if api_id is None or api_hash is None:
-            settings = Settings()  # type: ignore
+            settings = Settings()
         else:
             settings = Settings(api_id=api_id, api_hash=SecretStr(api_hash))
+
+        if settings.api_id is None or settings.api_hash is None:
+            raise ValueError(
+                "api_id and api_hash are required. "
+                "Provide them as arguments or set TELEGRAM_API_ID and TELEGRAM_API_HASH environment variables."
+            )
 
         proxy_kwargs: dict = {}
         if (
