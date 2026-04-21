@@ -5,10 +5,10 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Tuple, Type
 
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from telethon import TelegramClient, hints, types  # type: ignore
 from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
@@ -27,12 +27,26 @@ from mcp_telegram.utils import get_unique_filename, parse_telegram_url
 logger = logging.getLogger(__name__)
 
 
+class _JsonFileSettingsSource(PydanticBaseSettingsSource):
+    """Settings source that loads from the JSON config file."""
+
+    def get_field_value(self, field, field_name):  # type: ignore[override]
+        file_config = load_config_file()
+        value = file_config.get(field_name)
+        return value, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        file_config = load_config_file()
+        return {k: v for k, v in file_config.items() if v is not None}
+
+
 class Settings(BaseSettings):
     """Settings for the Telegram client.
 
-    Loads configuration in this order:
-    1. Environment variables (TELEGRAM_API_ID, TELEGRAM_API_HASH, etc.)
-    2. ~/.config/mcp-telegram/config.json file
+    Loads configuration in this order (highest to lowest priority):
+    1. Direct arguments passed to __init__
+    2. Environment variables (TELEGRAM_API_ID, TELEGRAM_API_HASH, etc.)
+    3. $XDG_CONFIG_HOME/mcp-telegram/config.json
     """
 
     model_config = SettingsConfigDict(
@@ -46,31 +60,16 @@ class Settings(BaseSettings):
     mtproto_proxy_port: int | None = None
     mtproto_proxy_secret: str | None = None
 
-    def __init__(self, **data):
-        """Initialize with merged config from file and env vars.
-
-        Priority: init_settings > env_settings > file_config
-        """
-        import os
-
-        # Start with file config
-        file_config = load_config_file()
-
-        # Load env vars with TELEGRAM_ prefix
-        env_config = {}
-        for key in ["api_id", "api_hash", "mtproto_proxy_server", "mtproto_proxy_port", "mtproto_proxy_secret"]:
-            env_key = f"TELEGRAM_{key.upper()}"
-            if env_key in os.environ:
-                env_config[key] = os.environ[env_key]
-
-        # Priority: data (init) > env_config > file_config
-        merged = {**file_config, **env_config, **data}
-
-        # Convert api_hash to SecretStr if it's a string
-        if "api_hash" in merged and isinstance(merged["api_hash"], str):
-            merged["api_hash"] = SecretStr(merged["api_hash"])
-
-        super().__init__(**merged)
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        return (init_settings, env_settings, _JsonFileSettingsSource(settings_cls))
 
 
 class Telegram:
@@ -118,11 +117,12 @@ class Telegram:
         if self._client is not None:
             return self._client
 
-        settings: Settings
-        if api_id is None or api_hash is None:
-            settings = Settings()
-        else:
-            settings = Settings(api_id=api_id, api_hash=SecretStr(api_hash))
+        kwargs: dict[str, Any] = {}
+        if api_id is not None:
+            kwargs["api_id"] = api_id
+        if api_hash is not None:
+            kwargs["api_hash"] = SecretStr(api_hash)
+        settings = Settings(**kwargs)
 
         if settings.api_id is None or settings.api_hash is None:
             raise ValueError(
