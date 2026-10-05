@@ -10,7 +10,7 @@ from typing import Any, Tuple, Type
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
-from telethon import TelegramClient, hints, types  # type: ignore
+from telethon import TelegramClient, hints, types, utils  # type: ignore
 from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
 from telethon.sessions import SQLiteSession  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
@@ -307,7 +307,11 @@ class Telegram:
 
         _entity = await self.client.get_entity(entity)
         assert isinstance(_entity, hints.Entity)
-        dialog = Dialog.from_entity(_entity)
+        unread_counts = await self._get_unread_counts([_entity])
+        dialog = Dialog.from_entity(
+            _entity,
+            unread_messages_count=unread_counts.get(utils.get_peer_id(_entity), 0),
+        )
 
         if unread:
             if not dialog or dialog.unread_messages_count == 0:
@@ -434,6 +438,41 @@ class Telegram:
 
         return Message.from_message(message)
 
+    async def _get_unread_counts(self, entities: list[hints.Entity]) -> dict[int, int]:
+        """Get the number of unread messages for each of the entities.
+
+        Unread counts live on the dialog, not on the entity, so they have to be
+        requested separately. Entities without a dialog (e.g. channels the
+        account has not joined) are left out of the result.
+
+        Args:
+            entities (`list[hints.Entity]`): The entities to check.
+
+        Returns:
+            `dict[int, int]`: The unread count keyed by marked peer ID.
+        """
+        if not entities:
+            return {}
+
+        try:
+            response: Any = await self.client(
+                functions.messages.GetPeerDialogsRequest(
+                    peers=[
+                        types.InputDialogPeer(utils.get_input_peer(x))
+                        for x in entities
+                    ]
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to get unread counts: {e}")
+            return {}
+
+        return {
+            utils.get_peer_id(d.peer): d.unread_count
+            for d in response.dialogs
+            if isinstance(d, types.Dialog)
+        }
+
     async def _can_send_message(self, entity: hints.Entity) -> bool:
         """Check if the logged-in account can send messages to an entity.
 
@@ -516,17 +555,23 @@ class Telegram:
             peer_id = await self.client.get_peer_id(peer)
             priority[peer_id] = i
 
+        entities: list[hints.Entity] = [
+            x
+            for x in itertools.chain(response.users, response.chats)
+            if isinstance(x, hints.Entity) and utils.get_peer_id(x) in priority
+        ]
+        unread_counts = await self._get_unread_counts(entities)
+
         result: list[Dialog] = []
-        for x in itertools.chain(response.users, response.chats):
-            if isinstance(x, hints.Entity):
-                peer_id = await self.client.get_peer_id(x)
-                if peer_id in priority:
-                    can_send_message = await self._can_send_message(x)
-                    try:
-                        dialog = Dialog.from_entity(x, can_send_message)
-                        result.append(dialog)
-                    except Exception as e:
-                        logger.warning(f"Failed to get dialog for entity {x.id}: {e}")
+        for x in entities:
+            can_send_message = await self._can_send_message(x)
+            try:
+                dialog = Dialog.from_entity(
+                    x, can_send_message, unread_counts.get(utils.get_peer_id(x), 0)
+                )
+                result.append(dialog)
+            except Exception as e:
+                logger.warning(f"Failed to get dialog for entity {x.id}: {e}")
 
         # Sort results based on priority
         result.sort(key=lambda x: priority.get(x.id))  # type: ignore
