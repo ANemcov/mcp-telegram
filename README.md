@@ -64,9 +64,47 @@ The `mcp-telegram` command-line tool is your entry point.
 mcp-telegram --help # See all commands
 ```
 
+### Prerequisites: Get Your API Credentials
+
+Before logging in, you need API credentials from Telegram:
+
+1. Visit [my.telegram.org/apps](https://my.telegram.org/apps)
+2. Log in with your phone number
+3. Copy your **API ID** and **API Hash**
+
+> [!WARNING]
+> Keep your API credentials private and never share them publicly
+
+### Configure Credentials
+
+There are two ways to provide your API credentials:
+
+#### Option 1: Config File (Recommended for local use)
+
+Create `~/.config/mcp-telegram/config.json`:
+
+```json
+{
+  "api_id": "YOUR_API_ID",
+  "api_hash": "YOUR_API_HASH",
+  "mtproto_proxy_server": null,
+  "mtproto_proxy_port": null,
+  "mtproto_proxy_secret": null
+}
+```
+
+#### Option 2: Environment Variables
+
+Set these environment variables:
+
+```bash
+export TELEGRAM_API_ID="YOUR_API_ID"
+export TELEGRAM_API_HASH="YOUR_API_HASH"
+```
+
 ### Login
 
-First, authenticate with your Telegram account:
+Authenticate with your Telegram account:
 
 ```bash
 mcp-telegram login
@@ -74,15 +112,11 @@ mcp-telegram login
 
 This interactive command will prompt you for:
 
-- **API ID & API Hash:** Obtain these from [my.telegram.org/apps](https://my.telegram.org/apps).
 - **Phone Number:** Your Telegram-registered phone number (international format, e.g., `+1234567890`).
 - **Verification Code:** Sent to your Telegram account upon first login.
 - **2FA Password:** If you have Two-Factor Authentication enabled.
 
-Your credentials are securely stored in the session file for future use.
-
-> [!WARNING]
-> Keep your API credentials private and never share them publicly
+Your session is securely stored for future use.
 
 > [!NOTE]
 > Use `mcp-telegram logout` to logout from current session or `mcp-telegram clear-session` to remove all stored session data.
@@ -105,13 +139,37 @@ The configuration file should contain:
       "command": "mcp-telegram" /* Use full path if client can't find the command (e.g. "/usr/local/bin/mcp-telegram"). See IMPORTANT section below for full path instructions. */,
       "args": ["start"],
       "env": {
-        "API_ID": "<your_api_id>",
-        "API_HASH": "<your_api_hash>"
+        "TELEGRAM_API_ID": "<your_api_id>",
+        "TELEGRAM_API_HASH": "<your_api_hash>"
       }
     }
   }
 }
 ```
+
+#### Using an MTProto Proxy
+
+If Telegram is blocked in your region, you can route the connection through an MTProto proxy by setting three additional environment variables:
+
+```json
+{
+  "mcpServers": {
+    "mcp-telegram": {
+      "command": "mcp-telegram",
+      "args": ["start"],
+      "env": {
+        "TELEGRAM_API_ID": "<your_api_id>",
+        "TELEGRAM_API_HASH": "<your_api_hash>",
+        "TELEGRAM_MTPROTO_PROXY_SERVER": "<proxy_host>",
+        "TELEGRAM_MTPROTO_PROXY_PORT": "<proxy_port>",
+        "TELEGRAM_MTPROTO_PROXY_SECRET": "<proxy_secret>"
+      }
+    }
+  }
+}
+```
+
+The proxy secret is the hex string from a `tg://proxy?...&secret=<secret>` link. When all three proxy variables are set, the connection uses `ConnectionTcpMTProxyRandomizedIntermediate` (the recommended transport for MTProto proxies).
 
 > [!Note]
 > Configuration paths vary by OS and client. For example:

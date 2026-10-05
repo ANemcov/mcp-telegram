@@ -22,7 +22,8 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[None]:
         await tg.client.connect()
         yield
     finally:
-        await tg.client.disconnect()  # type: ignore
+        if tg._client is not None:
+            await tg._client.disconnect()  # type: ignore
 
 
 tg = Telegram()
