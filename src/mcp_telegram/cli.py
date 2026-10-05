@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from mcp_telegram.server import mcp
-from mcp_telegram.telegram import Telegram
+from mcp_telegram.telegram import Settings, Telegram
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -99,19 +99,33 @@ async def login() -> None:
     console.print("\n[yellow]Please enter your credentials:[/yellow]")
 
     try:
-        api_id = console.input(
-            "\n[bold cyan]🔑 API ID[/bold cyan]\n"
-            "[dim]Enter your Telegram API ID (found on my.telegram.org)[/dim]\n"
-            "> ",
-            password=True,
-        )
+        settings = Settings()
 
-        api_hash = console.input(
-            "\n[bold cyan]🔒 API Hash[/bold cyan]\n"
-            "[dim]Enter your Telegram API hash (found on my.telegram.org)[/dim]\n"
-            "> ",
-            password=True,
-        )
+        if settings.api_id is not None:
+            console.print(
+                "\n[bold green]✓[/bold green] [dim]API ID loaded from config[/dim]"
+            )
+            api_id = settings.api_id
+        else:
+            api_id = console.input(
+                "\n[bold cyan]🔑 API ID[/bold cyan]\n"
+                "[dim]Enter your Telegram API ID (found on my.telegram.org)[/dim]\n"
+                "> ",
+                password=True,
+            )
+
+        if settings.api_hash is not None:
+            console.print(
+                "\n[bold green]✓[/bold green] [dim]API Hash loaded from config[/dim]"
+            )
+            api_hash = settings.api_hash.get_secret_value()
+        else:
+            api_hash = console.input(
+                "\n[bold cyan]🔒 API Hash[/bold cyan]\n"
+                "[dim]Enter your Telegram API hash (found on my.telegram.org)[/dim]\n"
+                "> ",
+                password=True,
+            )
 
         phone = console.input(
             "\n[bold cyan]📱 Phone Number[/bold cyan]\n"
@@ -171,8 +185,8 @@ async def login() -> None:
         console.print(f"\n[bold red]✗ Error:[/bold red] {str(e)}", style="red")
         sys.exit(1)
     finally:
-        if tg.client.is_connected():
-            tg.client.disconnect()
+        if tg._client is not None and tg._client.is_connected():
+            await tg._client.disconnect()
 
 
 @app.command()

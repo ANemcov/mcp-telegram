@@ -5,14 +5,16 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Tuple, Type
 
 from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from telethon import TelegramClient, hints, types  # type: ignore
+from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
 from xdg_base_dirs import xdg_state_home
 
+from mcp_telegram.config import get_config_instructions, load_config_file
 from mcp_telegram.types import (
     Dialog,
     DownloadedMedia,
@@ -25,11 +27,49 @@ from mcp_telegram.utils import get_unique_filename, parse_telegram_url
 logger = logging.getLogger(__name__)
 
 
-class Settings(BaseSettings):
-    """Settings for the Telegram client."""
+class _JsonFileSettingsSource(PydanticBaseSettingsSource):
+    """Settings source that loads from the JSON config file."""
 
-    api_id: str
-    api_hash: SecretStr
+    def get_field_value(self, field, field_name):  # type: ignore[override]
+        file_config = load_config_file()
+        value = file_config.get(field_name)
+        return value, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        file_config = load_config_file()
+        return {k: v for k, v in file_config.items() if v is not None}
+
+
+class Settings(BaseSettings):
+    """Settings for the Telegram client.
+
+    Loads configuration in this order (highest to lowest priority):
+    1. Direct arguments passed to __init__
+    2. Environment variables (TELEGRAM_API_ID, TELEGRAM_API_HASH, etc.)
+    3. $XDG_CONFIG_HOME/mcp-telegram/config.json
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="TELEGRAM_",
+        case_sensitive=False,
+    )
+
+    api_id: str | None = None
+    api_hash: SecretStr | None = None
+    mtproto_proxy_server: str | None = None
+    mtproto_proxy_port: int | None = None
+    mtproto_proxy_secret: str | None = None
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        return (init_settings, env_settings, _JsonFileSettingsSource(settings_cls))
 
 
 class Telegram:
@@ -62,7 +102,7 @@ class Telegram:
         """Create a Telegram client.
 
         If `api_id` and `api_hash` are not provided, the client
-        will use the default values from the `Settings` class.
+        will use the default values from the `Settings` class (environment variables).
 
         Args:
             api_id (`int`, optional): The API ID for the Telegram client.
@@ -72,22 +112,41 @@ class Telegram:
             `telethon.TelegramClient`: The created Telegram client.
 
         Raises:
-            `pydantic_core.ValidationError`: If `api_id` and `api_hash`
-            are not provided.
+            `ValueError`: If `api_id` and `api_hash` are not provided.
         """
         if self._client is not None:
             return self._client
 
-        settings: Settings
-        if api_id is None or api_hash is None:
-            settings = Settings()  # type: ignore
-        else:
-            settings = Settings(api_id=api_id, api_hash=SecretStr(api_hash))
+        kwargs: dict[str, Any] = {}
+        if api_id is not None:
+            kwargs["api_id"] = api_id
+        if api_hash is not None:
+            kwargs["api_hash"] = SecretStr(api_hash)
+        settings = Settings(**kwargs)
+
+        if settings.api_id is None or settings.api_hash is None:
+            raise ValueError(
+                "api_id and api_hash are required.\n\n" + get_config_instructions()
+            )
+
+        proxy_kwargs: dict = {}
+        if (
+            settings.mtproto_proxy_server
+            and settings.mtproto_proxy_port
+            and settings.mtproto_proxy_secret
+        ):
+            proxy_kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
+            proxy_kwargs["proxy"] = (
+                settings.mtproto_proxy_server,
+                settings.mtproto_proxy_port,
+                settings.mtproto_proxy_secret,
+            )
 
         self._client = TelegramClient(
             session=self._session_file,
             api_id=int(settings.api_id),
             api_hash=settings.api_hash.get_secret_value(),
+            **proxy_kwargs,
         )
 
         return self._client
