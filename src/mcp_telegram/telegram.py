@@ -2,6 +2,7 @@
 
 import itertools
 import logging
+import sqlite3
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from telethon import TelegramClient, hints, types  # type: ignore
 from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
+from telethon.sessions import SQLiteSession  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
 from xdg_base_dirs import xdg_state_home
 
@@ -25,6 +27,25 @@ from mcp_telegram.types import (
 from mcp_telegram.utils import get_unique_filename, parse_telegram_url
 
 logger = logging.getLogger(__name__)
+
+
+class _SharedSQLiteSession(SQLiteSession):
+    """SQLite session that several server processes can use at once.
+
+    Telethon keeps a write transaction open until `save()`, which is rarely
+    called, so a second process using the same session file fails with
+    "database is locked". Autocommit releases the lock after every statement.
+    """
+
+    def _cursor(self):  # type: ignore[override]
+        if self._conn is None:
+            self._conn = sqlite3.connect(
+                self.filename,
+                check_same_thread=False,
+                isolation_level=None,
+                timeout=30,
+            )
+        return self._conn.cursor()
 
 
 class _JsonFileSettingsSource(PydanticBaseSettingsSource):
@@ -143,7 +164,7 @@ class Telegram:
             )
 
         self._client = TelegramClient(
-            session=self._session_file,
+            session=_SharedSQLiteSession(str(self._session_file)),
             api_id=int(settings.api_id),
             api_hash=settings.api_hash.get_secret_value(),
             **proxy_kwargs,
