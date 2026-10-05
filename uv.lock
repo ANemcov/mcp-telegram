@@ -440,7 +440,7 @@ cli = [
 
 [[package]]
 name = "mcp-telegram"
-version = "0.1.11"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptg" },
