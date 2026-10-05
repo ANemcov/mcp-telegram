@@ -52,11 +52,19 @@ class Dialog(BaseModel):
                 return DialogType.CHANNEL
 
     @staticmethod
-    def from_entity(entity: hints.Entity, can_send_message: bool = False) -> "Dialog":
+    def from_entity(
+        entity: hints.Entity,
+        can_send_message: bool = False,
+        unread_messages_count: int = 0,
+    ) -> "Dialog":
         """Convert a `telethon.hints.Entity` object to a `Dialog` object.
 
         Args:
             entity (`telethon.hints.Entity`): The entity to convert.
+            can_send_message (`bool`, optional): Whether the user can send
+                messages to the dialog.
+            unread_messages_count (`int`, optional): The number of unread
+                messages in the dialog.
 
         Returns:
             `Dialog`: The converted Dialog object.
@@ -74,7 +82,7 @@ class Dialog(BaseModel):
             type=type,
             username=username,
             phone_number=phone_number,
-            unread_messages_count=0,
+            unread_messages_count=unread_messages_count,
             can_send_message=can_send_message,
         )
 
