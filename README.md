@@ -169,7 +169,7 @@ If Telegram is blocked in your region, you can route the connection through an M
 }
 ```
 
-The proxy secret is the hex string from a `tg://proxy?...&secret=<secret>` link. When all three proxy variables are set, the connection uses `ConnectionTcpMTProxyRandomizedIntermediate` (the recommended transport for MTProto proxies).
+The proxy secret is the value from a `tg://proxy?...&secret=<secret>` link, in hex or base64 form. The transport is chosen by the secret type: `ee` secrets (FakeTLS, with a domain after the key) use a FakeTLS connection, plain and `dd` secrets use `ConnectionTcpMTProxyRandomizedIntermediate`.
 
 > [!Note]
 > Configuration paths vary by OS and client. For example:

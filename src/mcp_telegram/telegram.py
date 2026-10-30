@@ -11,12 +11,12 @@ from typing import Any, Tuple, Type
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 from telethon import TelegramClient, hints, types, utils  # type: ignore
-from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate  # type: ignore
 from telethon.sessions import SQLiteSession  # type: ignore
 from telethon.tl import custom, functions, patched  # type: ignore
 from xdg_base_dirs import xdg_state_home
 
 from mcp_telegram.config import get_config_instructions, load_config_file
+from mcp_telegram.faketls import proxy_connection
 from mcp_telegram.types import (
     Dialog,
     DownloadedMedia,
@@ -157,11 +157,12 @@ class Telegram:
             and settings.mtproto_proxy_port
             and settings.mtproto_proxy_secret
         ):
-            proxy_kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
+            connection, secret = proxy_connection(settings.mtproto_proxy_secret)
+            proxy_kwargs["connection"] = connection
             proxy_kwargs["proxy"] = (
                 settings.mtproto_proxy_server,
                 settings.mtproto_proxy_port,
-                settings.mtproto_proxy_secret,
+                secret,
             )
 
         self._client = TelegramClient(
