@@ -208,3 +208,14 @@ class Messages(BaseModel):
     """The list of messages."""
     dialog: Dialog | None = None
     """The dialog the messages belong to."""
+
+
+class ForumTopic(BaseModel):
+    """A topic of a forum-enabled group."""
+
+    topic_id: int
+    """The ID of the topic. Use it as `topic_id` in `get_messages`."""
+    title: str
+    """The title of the topic."""
+    closed: bool = False
+    """Whether the topic is closed."""

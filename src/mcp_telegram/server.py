@@ -7,7 +7,7 @@ from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 
 from mcp_telegram.telegram import Telegram
-from mcp_telegram.types import Dialog, DownloadedMedia, Message, Messages
+from mcp_telegram.types import Dialog, DownloadedMedia, ForumTopic, Message, Messages
 from mcp_telegram.utils import parse_entity
 
 
@@ -234,6 +234,7 @@ async def get_messages(
     end_date: datetime | None = None,
     unread: bool = False,
     mark_as_read: bool = False,
+    topic_id: int | None = None,
 ) -> Messages:
     """Get messages from a specific entity.
 
@@ -267,6 +268,11 @@ async def get_messages(
             Whether to mark the messages as read.
             Defaults to False.
 
+        topic_id (`int`, optional):
+            The ID of a forum topic to restrict the messages to. Only messages
+            belonging to that topic are returned. Use the `get_forum_topics`
+            tool to find the ID of a topic by its title.
+
     Returns:
         `Messages`:
             A list of messages from the entity and the dialog the messages
@@ -282,7 +288,37 @@ async def get_messages(
         end_date,
         unread,
         mark_as_read,
+        topic_id,
     )
+
+
+@mcp.tool()
+async def get_forum_topics(entity: str, limit: int = 100) -> list[ForumTopic]:
+    """Get the topics of a forum-enabled group.
+
+    Retrieves the list of topics of a group that has topics enabled, so that
+    the returned `topic_id` can be passed to `get_messages` to read only the
+    messages of a single topic.
+
+    !IMPORTANT: If the entity is not a forum-enabled group, it will return
+    an error message.
+
+    Args:
+        entity (`str`):
+            The identifier of the group. This can be a Telegram chat ID
+            or a username.
+
+        limit (`int`, optional):
+            The maximum number of topics to retrieve. Defaults to 100.
+
+    Returns:
+        `list[ForumTopic]`:
+            The topics of the group, ordered by most recent activity first.
+    """
+
+    _entity = parse_entity(entity)
+
+    return await tg.get_forum_topics(_entity, limit)
 
 
 @mcp.tool()

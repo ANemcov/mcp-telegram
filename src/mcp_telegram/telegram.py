@@ -20,6 +20,7 @@ from mcp_telegram.config import get_config_instructions, load_config_file
 from mcp_telegram.types import (
     Dialog,
     DownloadedMedia,
+    ForumTopic,
     Media,
     Message,
     Messages,
@@ -270,6 +271,7 @@ class Telegram:
         end_date: datetime | None = None,
         unread: bool = False,
         mark_as_read: bool = False,
+        topic_id: int | None = None,
     ) -> Messages:
         """Get messages from a specific entity.
 
@@ -286,6 +288,8 @@ class Telegram:
                 Whether to get only unread messages. Defaults to False.
             mark_as_read (`bool`, optional):
                 Whether to mark the messages as read. Defaults to False.
+            topic_id (`int`, optional):
+                The ID of a forum topic to restrict the messages to.
 
         Returns:
             `list[Message]`:
@@ -322,6 +326,7 @@ class Telegram:
         async for message in self.client.iter_messages(  # type: ignore
             _entity,
             offset_date=end_date,  # fetching messages older than end_date
+            reply_to=topic_id,
         ):
             # Skip service messages and empty messages immediately
             if not isinstance(message, patched.Message) or isinstance(
@@ -344,6 +349,42 @@ class Telegram:
             results.append(Message.from_message(message))
 
         return Messages(messages=results, dialog=dialog)
+
+    async def get_forum_topics(
+        self, entity: str | int, limit: int = 100
+    ) -> list[ForumTopic]:
+        """Get the topics of a forum-enabled group.
+
+        Args:
+            entity (`str | int`): The entity to get the topics from.
+            limit (`int`, optional): The maximum number of topics to get.
+
+        Returns:
+            `list[ForumTopic]`: The topics of the group, newest activity first.
+        """
+
+        _entity = await self.client.get_entity(entity)
+        result = await self.client(
+            functions.messages.GetForumTopicsRequest(
+                peer=_entity,  # type: ignore
+                # a zero/None date is taken as the epoch and returns nothing
+                # but the pinned "General" topic
+                offset_date=datetime.now(timezone.utc) + timedelta(days=1),
+                offset_id=0,
+                offset_topic=0,
+                limit=limit,
+            )
+        )
+
+        return [
+            ForumTopic(
+                topic_id=topic.id,
+                title=topic.title,
+                closed=bool(getattr(topic, "closed", False)),
+            )
+            for topic in result.topics  # type: ignore
+            if isinstance(topic, types.ForumTopic)
+        ]
 
     async def download_media(
         self, entity: str | int, message_id: int, path: str | None = None
